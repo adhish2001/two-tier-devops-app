@@ -2,34 +2,29 @@ from flask import Flask, request, render_template_string, session
 import requests
 
 app = Flask(__name__)
-app.secret_key = "dev-secret-key"
+app.secret_key = "dev"
 
 MAX_GUESSES = 3
 
 
 def get_random_anime():
-    url = "https://api.jikan.moe/v4/random/anime"
-    data = requests.get(url).json()["data"]
-
-    return {
-        "title": data["title"],
-        "image": data["images"]["jpg"]["image_url"],
-        "season": data["season"],
-        "year": data["year"]
-    }
+    data = requests.get("https://api.jikan.moe/v4/random/anime").json()["data"]
+    return data["title"], data["images"]["jpg"]["image_url"], data["season"], data["year"]
 
 
 @app.route("/", methods=["GET", "POST"])
 def game():
 
-    # If no anime in session → create one
-    if "anime" not in session:
-        session["anime"] = get_random_anime()
+    # Initialize game once
+    if "title" not in session:
+        title, image, season, year = get_random_anime()
+        session["title"] = title
+        session["image"] = image
+        session["season"] = season
+        session["year"] = year
         session["guesses"] = 0
 
-    anime = session["anime"]
-
-    result = None
+    result = ""
     reveal = False
 
     if request.method == "POST":
@@ -39,8 +34,8 @@ def game():
         session["guesses"] += 1
 
         if (
-            guess_year == str(anime["year"])
-            and guess_season == anime["season"]
+            guess_year == str(session["year"])
+            and guess_season == session["season"]
         ):
             result = "✅ Correct!"
             reveal = True
@@ -52,20 +47,21 @@ def game():
             result = f"❌ Wrong — {MAX_GUESSES - session['guesses']} tries left"
 
     if reveal:
-        # reset game for next round
-        session.pop("anime", None)
-        session.pop("guesses", None)
+        answer = f"{session['season'].title()} {session['year']}"
+        session.clear()
+    else:
+        answer = ""
 
     return render_template_string(f"""
     <html>
     <body style="font-family:Arial; text-align:center; padding:40px;">
         <h1>Guess the Anime Release 📺</h1>
-        <img src="{anime['image']}" width="300"><br><br>
-        <h2>{anime['title']}</h2>
 
-        {"<h2>" + result + "</h2>" if result else ""}
+        <img src="{session.get('image', '')}" width="300"><br><br>
+        <h2>{session.get('title', '')}</h2>
 
-        {"<p>Answer: " + anime['season'].title() + " " + str(anime['year']) + "</p>" if reveal else ""}
+        <h3>{result}</h3>
+        <h3>{answer}</h3>
 
         <form method="POST">
             <label>Year:</label><br>
@@ -82,7 +78,7 @@ def game():
             <button type="submit">Submit Guess</button>
         </form>
 
-        {"<br><a href='/'>New Anime</a>" if reveal else ""}
+        <br><a href="/">New Game</a>
     </body>
     </html>
     """)
